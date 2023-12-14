@@ -1,0 +1,5 @@
+# DNS Zone delegated to OpenShift (ex: apps.foo.bar)
+openshiftDnsZone: ""
+
+# Master Key used to generate the RHACS admin password
+masterKey: "S3cr3t!"

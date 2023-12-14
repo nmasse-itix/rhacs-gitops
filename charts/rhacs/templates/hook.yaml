@@ -1,0 +1,151 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+  name: stackrox-hook
+  namespace: stackrox
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+  name: stackrox-hook
+  namespace: stackrox
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: edit
+subjects:
+- kind: ServiceAccount
+  name: stackrox-hook
+  namespace: stackrox
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+  name: stackrox-hook-scc
+  namespace: stackrox 
+rules:
+- apiGroups:
+  - security.openshift.io
+  resourceNames:
+  - anyuid
+  resources:
+  - securitycontextconstraints
+  verbs:
+  - use
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+  name: stackrox-hook-scc
+  namespace: stackrox
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: stackrox-hook-scc
+subjects:
+- kind: ServiceAccount
+  name: stackrox-hook
+  namespace: stackrox
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+  name: stackrox-init-hook
+  namespace: stackrox
+data:
+{{ (.Files.Glob "files/stackrox-init-hook/*").AsConfig | indent 2 }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+  name: stackrox-configure-hook
+  namespace: stackrox
+data:
+{{ (.Files.Glob "files/stackrox-configure-hook/*").AsConfig | indent 2 }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+  name: stackrox-init-hook
+  namespace: stackrox
+spec:
+  backoffLimit: 30
+  template:
+    spec:
+      containers:
+      - name: hook
+        command:
+        - /entrypoint/configure-acs.sh
+        args: []
+        image: registry.redhat.io/openshift4/ose-cli:v4.13
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: ROX_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: central-admin
+              key: password
+        - name: USER
+          value: openshift
+        - name: HOME
+          value: /tmp
+        volumeMounts:
+        - mountPath: /entrypoint
+          name: stackrox-hook
+          readOnly: true
+      serviceAccountName: stackrox-hook
+      serviceAccount: stackrox-hook
+      restartPolicy: OnFailure
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: stackrox-hook
+        configMap:
+          name: stackrox-init-hook
+          defaultMode: 0755
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+  name: stackrox-configure-hook
+  namespace: stackrox
+spec:
+  backoffLimit: 30
+  template:
+    spec:
+      containers:
+      - name: hook
+        command:
+        - /playbooks/entrypoint.sh
+        args: []
+        image: registry.redhat.io/ansible-automation-platform-21/ee-supported-rhel8:1.0
+        imagePullPolicy: IfNotPresent
+        volumeMounts:
+        - mountPath: /playbooks
+          name: stackrox-hook
+          readOnly: true
+        workingDir: /playbooks
+      serviceAccountName: stackrox-hook
+      serviceAccount: stackrox-hook
+      restartPolicy: OnFailure
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: stackrox-hook
+        configMap:
+          name: stackrox-configure-hook
+          defaultMode: 0755

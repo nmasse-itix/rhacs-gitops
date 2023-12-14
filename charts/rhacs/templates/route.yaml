@@ -1,0 +1,55 @@
+kind: Service
+apiVersion: v1
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+  name: central-plain
+  namespace: stackrox
+spec:
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP
+  sessionAffinity: None
+  selector:
+    app: central
+---
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+  name: central-plain
+  namespace: stackrox
+spec:
+  host: central.{{ .Values.openshiftDnsZone }}
+  to:
+    kind: Service
+    name: central-plain
+    weight: 100
+  port:
+    targetPort: 8080
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+---
+kind: NetworkPolicy
+apiVersion: networking.k8s.io/v1
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+  name: allow-ext-to-central-plain
+  namespace: stackrox
+spec:
+  podSelector:
+    matchLabels:
+      app: central
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 8080
+  policyTypes:
+    - Ingress
